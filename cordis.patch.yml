@@ -1,0 +1,6 @@
+# dsh-hide-tool-noise bundle layer: applied automatically by the profile's
+# bundle patch (package.json declares dsh.bundle.patch). Mounts the plugin row.
+- insert:
+    - id: dsh-hide-tool-noise
+      name: dsh-hide-tool-noise
+      config: {}
