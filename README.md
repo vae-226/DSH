@@ -64,7 +64,7 @@ pnpm install
 ```json
 {
   "dependencies": {
-    "dsh-hide-tool-noise": "github:vae-226/dsh-hide-tool-noise"
+    "dsh-hide-tool-noise": "github:vae-226/DSH"
   }
 }
 ```
