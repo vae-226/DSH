@@ -1,0 +1,7 @@
+{
+  "name": "dsh-plugins",
+  "version": "1.0.0",
+  "private": true,
+  "description": "vae-226's DSH plugin & skill collection — a monorepo of small, focused enhancements for DeepSeek Harness Web.",
+  "license": "MIT"
+}
