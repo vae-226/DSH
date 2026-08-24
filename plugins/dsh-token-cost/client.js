@@ -25,6 +25,13 @@ window.__ModuleLoader__.load({
     const exports = module.exports
     Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' })
 
+    // Try to load the runtime sessions API directly (bypasses inject)
+    let runtimeSessions = null
+    try {
+      const rt = require('@deepseek-ai/dsh-client-runtime/client')
+      runtimeSessions = rt && rt.sessions || null
+    } catch { /* require not available */ }
+
     // ── configurable price table (USD per 1M tokens) ──────────────────────
     // Prices are estimates to be adjusted to the provider's current rates.
     // Unknown models fall back to `default`. Key by model name (lowercase).
@@ -191,15 +198,28 @@ window.__ModuleLoader__.load({
           hint.style.cssText = 'margin-top:6px;color:var(--dsw-alias-label-tertiary,#888);font-size:11px;line-height:16px'
           panelEl.appendChild(hint)
         }
-        hint.textContent = '⚠ 该模型无价格表，按默认价估算；可在 client.js 的 PRICES 中配置'
+        hint.textContent = '⚠ 该模型无价格表，按默认价估算'
       }
+      // Debug row
+      let dbg = panelEl.querySelector('.dtc-debug')
+      if (!dbg) {
+        dbg = document.createElement('div')
+        dbg.className = 'dtc-debug'
+        dbg.style.cssText = 'margin-top:4px;padding-top:4px;border-top:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.08));font-size:10px;line-height:14px;color:var(--dsw-alias-label-tertiary,#aaa);word-break:break-all'
+        panelEl.appendChild(dbg)
+      }
+      dbg.textContent = 'sid: ' + (sessionId || '—') + ' | ' + (debugInfo || '—')
     }
 
     // ── data plumbing ─────────────────────────────────────────────────────
+    let debugInfo = ''
+
     async function resolveModel() {
       modelResolved = false
       modelName = null
       modelProvider = null
+      debugInfo = ''
+      // Try 1: binding.session.models()
       try {
         if (binding && binding.session && typeof binding.session.models === 'function') {
           const res = await binding.session.models()
@@ -208,27 +228,81 @@ window.__ModuleLoader__.load({
             modelName = current.model
             modelProvider = current.provider
             modelResolved = true
+            debugInfo = 'models() ✓'
           }
         }
-      } catch { /* fall through */ }
+      } catch { debugInfo = 'models() threw' }
+      // Try 2: history fallback
       if (!modelResolved) {
-        // fallback: read the latest request/context event via history
         try {
           if (binding && binding.session && typeof binding.session.history === 'function') {
-            const res = await binding.session.history({ direction: 'backward', limit: 1, beforeSeq: undefined })
+            const res = await binding.session.history({ direction: 'backward', limit: 5, beforeSeq: undefined })
             const events = res && res.events || []
             for (const entry of events) {
               const ev = entry && entry.event
               if (ev && ev.type === 'request/context' && ev.data && ev.data.model) {
                 modelName = ev.data.model
                 modelResolved = true
+                debugInfo = 'history ✓'
                 break
               }
             }
+            if (!modelResolved) debugInfo = 'history: no model event'
           }
-        } catch { /* keep unknown */ }
+        } catch { debugInfo = debugInfo || 'history threw' }
+      }
+      // Try 3: scan binding.session for any model-like prop
+      if (!modelResolved && binding && binding.session) {
+        try {
+          const s = binding.session
+          if (s.model) { modelName = s.model; modelResolved = true; debugInfo = 'session.model ✓' }
+          else if (s.currentModel) { modelName = s.currentModel; modelResolved = true; debugInfo = 'session.currentModel ✓' }
+        } catch {}
       }
       render()
+    }
+
+    function findSessionId() {
+      if (sessionId) return sessionId  // already found, don't overwrite debugInfo
+      if (!ctxSessions) { debugInfo = 'no ctxSessions'; return null }
+      // Dump keys once
+      try {
+        const keys = Object.keys(ctxSessions).filter(k => typeof ctxSessions[k] !== 'function').slice(0, 8)
+        debugInfo = 'ctx keys: ' + (keys.length ? keys.join(',') : '(none)')
+      } catch {}
+      // Try selection
+      try {
+        const sel = ctxSessions.selection
+        if (sel) {
+          let v = null
+          if (typeof sel.get === 'function') v = sel.get()
+          else if (typeof sel.getState === 'function') v = sel.getState()
+          else if (sel.value !== undefined) v = sel.value
+          else if (sel.current !== undefined) v = typeof sel.current === 'function' ? sel.current() : sel.current
+          if (typeof v === 'string') { debugInfo = 'sel→string'; return v }
+          if (v && typeof v === 'object') {
+            if (typeof v.current === 'string') { debugInfo = 'sel→obj.cur'; return v.current }
+            if (typeof v.sessionId === 'string') { debugInfo = 'sel→obj.sid'; return v.sessionId }
+          }
+        }
+      } catch {}
+      // Try list
+      try {
+        const list = ctxSessions.list
+        if (list) {
+          let v = null
+          if (typeof list.get === 'function') v = list.get()
+          else if (typeof list.getState === 'function') v = list.getState()
+          else if (list.value !== undefined) v = list.value
+          const items = Array.isArray(v) ? v : (v && Array.isArray(v.items) ? v.items : (v && Array.isArray(v.sessions) ? v.sessions : []))
+          for (const item of items) {
+            const id = item && (item.sessionId || item.id)
+            if (typeof id === 'string') { debugInfo = 'list[' + items.indexOf(item) + ']'; return id }
+          }
+          if (items.length === 0) debugInfo = 'list empty'
+        }
+      } catch {}
+      return null
     }
 
     function attachSession(nextId) {
@@ -236,19 +310,48 @@ window.__ModuleLoader__.load({
       sessionId = nextId
       if (unsubscribeProjections) { unsubscribeProjections(); unsubscribeProjections = null }
       binding = null
-      if (!sessionId || !ctxSessions) return
+      if (!sessionId) { debugInfo = 'no sid'; render(); return }
+      const src = (ctxSessions && typeof ctxSessions.binding === 'function') ? ctxSessions :
+                  (runtimeSessions && typeof runtimeSessions.binding === 'function') ? runtimeSessions : null
+      if (!src) { debugInfo = 'no sessions src'; render(); return }
       try {
-        binding = ctxSessions.binding(sessionId)
-      } catch { binding = null }
-      if (!binding || !binding.session || !binding.session.projections) return
+        binding = src.binding(sessionId)
+      } catch (e) {
+        binding = null
+        debugInfo = 'binding err: ' + (e && e.message ? String(e.message).slice(0, 30) : '?')
+        render(); return
+      }
+      if (!binding || !binding.session) { debugInfo = 'no binding.session'; render(); return }
+      const proj = binding.session.projections
+      if (!proj) { debugInfo = 'no projections'; render(); return }
+      // Enumerate what's actually in the projection store
       try {
-        unsubscribeProjections = binding.session.projections.subscribeAny(() => render())
-      } catch { /* no live updates */ }
+        const projKeys = typeof proj.values === 'function' ? Object.keys(proj.values() || {}) :
+                         typeof proj.keys === 'function' ? [...proj.keys()] : []
+        const tu = typeof proj.get === 'function' ? proj.get('tokenUsage') :
+                   typeof proj.faceOf === 'function' ? (() => { try { return proj.faceOf('tokenUsage')?.value } catch { return null } })() : null
+        debugInfo = 'proj keys[' + projKeys.length + ']: ' + (projKeys.slice(0,4).join(',') || '(none)') + (tu ? ' ✓' : ' ∅')
+      } catch { debugInfo = 'proj enum err' }
+      try {
+        unsubscribeProjections = proj.subscribeAny ? proj.subscribeAny(() => render()) : null
+      } catch {}
       void resolveModel()
       render()
     }
 
     let ctxSessions = null
+    let retryTimer = null
+
+    function tryAttach() {
+      const id = findSessionId()
+      if (id) {
+        attachSession(id)
+        if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
+      } else if (!retryTimer) {
+        retryTimer = setTimeout(tryAttach, 2000)
+      }
+    }
+
     function setup() {
       if (typeof document === 'undefined' || rootEl) return
 
@@ -303,20 +406,37 @@ window.__ModuleLoader__.load({
       rootEl.dataset.styleTag = ''
       rootEl.__style = style
 
-      // Track the current session via sessions.selection
+      // Try to find the current session (with retry if not ready yet)
       if (ctxSessions) {
         try {
           const sel = ctxSessions.selection
-          if (sel && typeof sel.get === 'function') attachSession(sel.get())
-          if (sel && typeof sel.subscribe === 'function') {
-            unsubscribeSelection = sel.subscribe((value) => attachSession(typeof value === 'string' ? value : value?.current))
+          if (sel) {
+            // Subscribe to future changes
+            if (typeof sel.subscribe === 'function') {
+              unsubscribeSelection = sel.subscribe((value) => {
+                const id = typeof value === 'string' ? value : (value && (value.current || value.sessionId || value.id))
+                if (id && id !== sessionId) { attachSession(id); debugInfo = 'sub→' + String(id).slice(-8) }
+              })
+            }
+            // Immediately read current value (subscribe only fires on changes)
+            let v = null
+            try { if (typeof sel.get === 'function') v = sel.get() } catch {}
+            if (v === null || v === undefined) try { if (typeof sel.getState === 'function') v = sel.getState() } catch {}
+            if (v === null || v === undefined) try { v = sel.value } catch {}
+            if (v === null || v === undefined) try { v = typeof sel.current === 'function' ? sel.current() : sel.current } catch {}
+            const id = typeof v === 'string' ? v : (v && (v.current || v.sessionId || v.id))
+            if (id) { debugInfo = 'sel init→' + String(id).slice(-8); attachSession(id) }
+            else debugInfo = 'sel init: ' + (v === null || v === undefined ? 'null' : JSON.stringify(v).slice(0,30))
           }
-        } catch { /* selection unavailable: stay on the first session */ }
+        } catch {}
       }
+      // Fallback: retry polling if session not found yet
+      tryAttach()
       render()
     }
 
     function dispose() {
+      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
       if (unsubscribeProjections) { unsubscribeProjections(); unsubscribeProjections = null }
       if (unsubscribeSelection) { unsubscribeSelection(); unsubscribeSelection = null }
       if (rootEl) {
