@@ -1,0 +1,26 @@
+{
+  "name": "dsh-file-attachment",
+  "version": "1.0.0",
+  "description": "📎 File attachment plugin for DSH Web: upload zip, pdf, docx, and other files via drag-drop or file picker.",
+  "license": "MIT",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "client": {
+      "platform": "web"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
