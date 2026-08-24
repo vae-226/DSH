@@ -1,0 +1,6 @@
+# dsh-token-cost bundle layer: applied automatically by the profile's bundle
+# patch (package.json declares dsh.bundle.patch). Mounts the plugin row.
+- insert:
+    - id: dsh-token-cost
+      name: dsh-token-cost
+      config: {}
