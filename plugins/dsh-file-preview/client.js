@@ -39,7 +39,8 @@ window.__ModuleLoader__.load({
       '.dfp-overlay-box{width:min(90vw,900px);max-height:90vh;background:var(--dsw-alias-bg-layer-2,#fff);border-radius:14px;box-shadow:0 12px 48px rgba(0,0,0,.35);display:flex;flex-direction:column;overflow:hidden}' +
       '.dfp-overlay-head{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.08));font-size:13px;font-weight:600}' +
       '.dfp-overlay-body{flex:1;overflow:auto;padding:16px;font-family:var(--ds-font-family-code,monospace);font-size:13px;line-height:22px;white-space:pre-wrap;word-break:break-word;color:var(--dsw-alias-label-primary,#111)}' +
-      '.dfp-loading{color:var(--dsw-alias-label-tertiary,#888);padding:16px;text-align:center;font-size:12px}'
+      '.dfp-loading{color:var(--dsw-alias-label-tertiary,#888);padding:16px;text-align:center;font-size:12px}' +
+      '.dfp-upload-input{display:none}'
 
     // ── state ─────────────────────────────────────────────────────────────
     let sidebarEl, toggleEl, treeEl, open = false, files = [], cwd = ''
@@ -140,8 +141,10 @@ window.__ModuleLoader__.load({
       </div>
       <div class="dfp-sidebar-tree"></div>
       <div class="dfp-sidebar-foot">
-        <button class="dfp-sidebar-btn" id="dfp-explorer-btn">📂 在资源管理器打开</button>
-      </div>`
+        <button class="dfp-sidebar-btn" id="dfp-upload-btn">📎 上传文件</button>
+        <button class="dfp-sidebar-btn" id="dfp-explorer-btn" style="margin-top:4px">📂 在资源管理器打开</button>
+      </div>
+      <input type="file" class="dfp-upload-input" id="dfp-upload-input" multiple accept=".zip,.tar,.gz,.bz2,.7z,.rar,.pdf,.docx,.doc,.xlsx,.xls,.pptx,.ppt,.txt,.md,.csv,.json,.xml,.yaml,.yml,.py,.js,.ts,.java,.go,.rs,.rb,.html,.css,.mp3,.wav,.mp4,.mov,.avi,.png,.jpg,.jpeg,.gif,.webp,.svg">`
       document.body.appendChild(sidebarEl)
       treeEl = sidebarEl.querySelector('.dfp-sidebar-tree')
       treeEl.innerHTML = '<div class="dfp-loading">加载中…</div>'
@@ -154,6 +157,31 @@ window.__ModuleLoader__.load({
         open = false; sidebarEl.classList.remove('open')
       })
       sidebarEl.querySelector('#dfp-explorer-btn').addEventListener('click', () => openInExplorer())
+      sidebarEl.querySelector('#dfp-upload-btn').addEventListener('click', () => {
+        sidebarEl.querySelector('#dfp-upload-input').click()
+      })
+      sidebarEl.querySelector('#dfp-upload-input').addEventListener('change', async (e) => {
+        const files = e.target.files
+        if (!files || files.length === 0) return
+        for (const file of files) {
+          const reader = new FileReader()
+          reader.onload = async () => {
+            const base64 = reader.result.split(',')[1]
+            try {
+              const res = await fetch(`${location.origin}/dsh-file-attachment/upload`, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ type: 'client-request', rpcId: crypto.randomUUID(), method: 'upload', payload: { name: file.name, data: base64 } })
+              })
+              const data = await res.json()
+              if (data.result && data.result.ok) {
+                loadFiles() // refresh tree
+              }
+            } catch {}
+          }
+          reader.readAsDataURL(file)
+        }
+      })
 
       // Toggle button
       toggleEl = document.createElement('button')
