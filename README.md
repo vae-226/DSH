@@ -10,7 +10,8 @@ DeepSeek Harness Web GUI 的插件与技能合集仓库。每个插件/技能都
 DSH/
 ├── plugins/                  # DSH 插件（Cordis bundle + 浏览器端 client）
 │   ├── dsh-hide-tool-noise/  # 🧹 隐藏聊天流中的工具调用噪音（含一键开关）
-│   └── dsh-token-cost/       # 💰 Token 用量与估算成本面板
+│   ├── dsh-token-cost/       # 💰 Token 用量与估算成本面板
+│   └── dsh-file-preview/     # 📂 文件侧边栏：预览、全屏查看、在资源管理器打开
 └── skills/                   # DSH 技能（预留，规划中）
 ```
 
@@ -27,6 +28,12 @@ DSH/
 右下角浮动 💰 面板：实时显示当前会话 token 用量（输入/输出/缓存）、上下文使用率、会话统计与估算成本，点击展开详情。
 
 - 详见 [`plugins/dsh-token-cost/README.md`](plugins/dsh-token-cost/README.md)
+
+### 📂 dsh-file-preview
+
+右下角 📂 浮动按钮，展开工作区文件树：点击文件全屏预览内容，一键在 Windows 资源管理器打开。
+
+- 详见 [`plugins/dsh-file-preview/README.md`](plugins/dsh-file-preview/README.md)
 
 ## 🛠️ 安装插件
 

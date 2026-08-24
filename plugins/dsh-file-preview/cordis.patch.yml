@@ -1,0 +1,6 @@
+# dsh-file-preview bundle layer: applied automatically by the profile's bundle
+# patch (package.json declares dsh.bundle.patch). Mounts the plugin row.
+- insert:
+    - id: dsh-file-preview
+      name: dsh-file-preview
+      config: {}
